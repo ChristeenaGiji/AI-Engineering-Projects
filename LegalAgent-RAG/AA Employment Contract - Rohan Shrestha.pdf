@@ -1,0 +1,61 @@
+from datetime import datetime
+
+class RenewalTrackerAgent:
+    def __init__(self):
+        pass  # Placeholder for future config/logging
+
+    def process_dates(self, dates_json: dict):
+        """
+        Accepts a dictionary with keys: start_date, end_date, renewal_terms.
+        Returns structured renewal info and flags if the contract expires in the next 30 days.
+        """
+        print(" Processing contract dates...")
+
+        start = dates_json.get("start_date")
+        end = dates_json.get("end_date")
+        renewal = dates_json.get("renewal_terms", "Not specified")
+
+        print(f" Start Date: {start or 'Not specified'}")
+        print(f" End Date: {end or 'Not specified'}")
+        print(f" Renewal Terms: {renewal}")
+
+        # Validate end date
+        if not end or not isinstance(end, str):
+            print(" End date is missing or not a string.")
+            return {
+                "expiry_date": "Not specified",
+                "days_remaining": -1,
+                "renewal_terms": renewal,
+                "expiring_soon": False
+            }
+
+        try:
+            end_date = datetime.strptime(end.strip(), "%Y-%m-%d")
+            today = datetime.today()
+            days_remaining = (end_date - today).days
+
+            if 0 <= days_remaining <= 30:
+                print(f" Contract is expiring in {days_remaining} days!")
+                expiring = True
+            elif days_remaining < 0:
+                print(" Contract has already expired.")
+                expiring = True
+            else:
+                print(f" Contract is valid for another {days_remaining} days.")
+                expiring = False
+
+            return {
+                "expiry_date": end,
+                "days_remaining": days_remaining,
+                "renewal_terms": renewal,
+                "expiring_soon": expiring
+            }
+
+        except ValueError:
+            print(f" Invalid end date format: {end}")
+            return {
+                "expiry_date": "Invalid format",
+                "days_remaining": -1,
+                "renewal_terms": renewal,
+                "expiring_soon": False
+            }

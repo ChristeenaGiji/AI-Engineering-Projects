@@ -1,0 +1,35 @@
+from my_agents.chatbot_agent import ChatbotAgent
+
+def main():
+    print("📄 Legal Contract Chatbot")
+    print("Type your questions about the contract. Type 'exit' to quit.\n")
+
+    # Initialize the agent
+    agent = ChatbotAgent()
+
+    # ✅ Quick test: is retrieval working?
+    test_docs = agent.retriever.get_relevant_documents("Who is the landlord?")
+    if test_docs:
+        print("✅ Retriever is working. Sample retrieved chunk:\n")
+        print(test_docs[0].page_content[:300], "...\n")
+    else:
+        print("⚠️ Retriever returned no documents. Check if your vectorstore is populated.\n")
+
+    # User input loop
+    while True:
+        question = input("🧑 You: ")
+        if question.lower().strip() in {"exit", "quit"}:
+            print("👋 Exiting chatbot.")
+            break
+
+        response = agent.run(question)
+
+        print("\n🤖 Chatbot:")
+        print(response["answer"])
+
+        print("\n📚 Sources used:")
+        for i, src in enumerate(response["sources"], 1):
+            print(f"{i}. {src[:300]}...\n")  # Show snippet of each chunk
+
+if __name__ == "__main__":
+    main()

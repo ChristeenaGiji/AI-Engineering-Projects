@@ -1,0 +1,475 @@
+import os
+import json
+from typing import List, Dict, Text
+from langchain.prompts import PromptTemplate
+from langchain_community.vectorstores import Chroma
+from langchain.schema import Document
+from langchain_groq import ChatGroq
+from langchain_huggingface import HuggingFaceEmbeddings
+from my_agents.loaders import MixedContentLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from dateutil.parser import parse
+from dateutil.parser._parser import ParserError
+
+
+
+from dotenv import load_dotenv
+load_dotenv()
+
+
+class PolicyExtractorAgent:
+    def __init__(self, file_path: str, base_save_dir: str = "./vectorstore"):
+        self.file_path = file_path
+        self.base_save_dir = base_save_dir
+        self.llm = ChatGroq(model="llama3-70b-8192")
+        self.embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en")
+        self.topic = "Unknown"
+
+
+        self.table_cleaning_prompt = PromptTemplate.from_template("""
+You are a helpful assistant.
+
+Given this raw table text extracted from a PDF, clean it up and reformat it as a proper Markdown table with headers and rows.
+
+Raw table text:
+{table_text}
+
+Markdown table:
+""")
+
+    def _group_by_headings(self, text: str) -> List[str]:
+        sections = []
+        current_chunk = []
+
+        lines = text.splitlines()
+        for idx, line in enumerate(lines):
+            line = line.strip()
+            if not line:
+                continue
+
+        # Heuristic: Is this line a heading?
+        # - All uppercase (ignoring numbers, punctuation)
+        # - Short line (<= 5 words)
+        # - Optionally, line ends with colon ":"
+            is_all_caps = line.isupper()
+            is_short = len(line.split()) <= 5
+            ends_with_colon = line.endswith(":")
+
+            is_heading = (is_all_caps and is_short) or ends_with_colon
+
+            if is_heading:
+                if current_chunk:
+                    sections.append("\n".join(current_chunk))
+                    current_chunk = []
+            current_chunk.append(line)
+
+        if current_chunk:
+            sections.append("\n".join(current_chunk))
+
+        return sections
+
+
+    def load_and_split_mixed(self) -> List[Dict]:
+        loader = MixedContentLoader(self.file_path)
+        chunks, _ = loader.load()
+
+        # print(f" Total chunks loaded from file: {len(chunks)}")
+        # print("---- Loaded chunks content preview ----")
+        # for i, chunk in enumerate(chunks, 1):
+        #     print(f"Chunk {i} [{chunk['type']}]: {chunk['content'][:200]}...")
+        #     print("-" * 50)
+
+        # Combine all text chunks into one big string
+        full_text = "\n\n".join(chunk["content"] for chunk in chunks if chunk["type"] == "text")
+
+        
+        
+
+        # Step 1: Group by headings
+        grouped_chunks = self._group_by_headings(full_text)
+
+        #  Extract the topic from the first grouped section (first heading-based chunk)
+        if grouped_chunks:
+            first_chunk_lines = grouped_chunks[0].splitlines()
+            for line in first_chunk_lines:
+                clean_line = line.strip()
+                if clean_line:
+                    self.topic = clean_line
+                    break
+
+
+        # Step 2: Split large chunks further
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=300)
+        final_chunks = []
+
+        for chunk_text in grouped_chunks:
+            if len(chunk_text) > 1200:  # threshold for splitting
+                split_docs = splitter.create_documents([chunk_text])
+                final_chunks.extend(split_docs)
+            else:
+                final_chunks.append(Document(page_content=chunk_text))
+
+        print(f" Total chunks after heading-based grouping and splitting: {len(final_chunks)}")
+        for i, doc in enumerate(final_chunks, 1):
+            print(f"Chunk {i}: {doc.page_content[:300]}...\n{'-'*40}")
+
+        # Convert final_chunks to your expected List[Dict]
+        chunk_dicts = [{"type": "text", "content": doc.page_content} for doc in final_chunks]
+
+        # Now merge related date chunks like before (optional but recommended)
+        keywords = ["start date", "end date", "commencement", "completion", "term"]
+        merged_chunks = self._merge_related_chunks(chunk_dicts, keywords)
+
+        print(f" Total chunks after merging related date chunks: {len(merged_chunks)}")
+
+        return merged_chunks
+
+    def _merge_related_chunks(self, chunks: List[Dict], keywords: List[str]) -> List[Dict]:
+        merged_chunks = []
+        i = 0
+        while i < len(chunks):
+            content = chunks[i]["content"]
+            if any(kw.lower() in content.lower() for kw in keywords):
+                if i + 1 < len(chunks):
+                    next_content = chunks[i + 1]["content"]
+                    if any(kw.lower() in next_content.lower() for kw in keywords):
+                        merged = content + "\n" + next_content
+                        merged_chunks.append({"type": "text", "content": merged})
+                        i += 2
+                        continue
+            merged_chunks.append(chunks[i])
+            i += 1
+        return merged_chunks
+
+
+        
+
+    def clean_tables_if_pdf(self, chunks: List[Dict]) -> List[Dict]:
+        if os.path.splitext(self.file_path)[1].lower() != ".pdf":
+            return chunks
+
+        cleaned_chunks = []
+        for chunk in chunks:
+            if chunk["type"] == "table":
+                response = self.llm.invoke({"table_text": chunk["content"]})
+                cleaned_chunks.append({"type": "table", "content": response.content})
+            else:
+                cleaned_chunks.append(chunk)
+        return cleaned_chunks
+
+    def build_full_contract_vectorstore(self, chunks: List[Dict]):
+        text_chunks = [chunk["content"] for chunk in chunks if chunk["type"] == "text"]
+        filtered_texts = [
+            text for text in text_chunks
+            if len(text) > 30 and text.lower() not in {
+                "additional clauses", "definitions", "agreement", "terms"
+            }
+        ]
+        save_path = os.path.join(self.base_save_dir, "full_contract_db")
+        Chroma.from_texts(filtered_texts, self.embeddings, persist_directory=save_path).persist()
+        print(f" Saved {len(filtered_texts)} clean chunks to: {save_path}")
+
+    def extract_and_save_dates_with_llm(self, chunks: List[Dict]) -> Dict[str, str]:
+    
+
+        def normalize_date(date_str):
+            if not date_str or date_str.lower() == "not specified":
+                return None
+            try:
+                return parse(date_str, dayfirst=True).strftime("%Y-%m-%d")
+            except (ParserError, ValueError):
+                return None
+
+        retriever = Chroma(
+            persist_directory=os.path.join(self.base_save_dir, "full_contract_db"),
+            embedding_function=self.embeddings
+        ).as_retriever(search_kwargs={"k": 3})
+
+        queries = [
+        "Start Date",
+        "End Date",
+        "Commencement Date",
+        "Completion Date",
+        "Term",
+        "Renewal",
+        "Renewal Terms",
+        "Extension",
+        "Lease Renewal"
+        ]
+
+        # retrieved_chunks = []
+        # for q in queries:
+        #     print(f"\n Retrieving chunks for query: {q}")
+        #     docs = retriever.get_relevant_documents(q)
+        #     for i, doc in enumerate(docs, 1):
+        #         print(f"Chunk {i}:\n{doc.page_content}\n{'-'*50}")
+        #     retrieved_chunks.extend(docs)
+
+        # Remove duplicates
+        seen = set()
+        unique_chunks = []
+        # for doc in retrieved_chunks:
+        #     if doc.page_content not in seen:
+        #         unique_chunks.append(doc)
+        #         seen.add(doc.page_content)
+
+        # combined_text = "\n\n".join([doc.page_content for doc in unique_chunks])
+
+        for q in queries:
+            print(f"\n Retrieving chunks for query: {q}")
+            docs = retriever.get_relevant_documents(q)
+        
+            for doc in docs:
+                content = doc.page_content.strip()
+                if content not in seen:
+                    seen.add(content)
+                    unique_chunks.append(doc)
+                    print(f"Chunk {len(unique_chunks)}:\n{content}\n{'-'*50}")
+            combined_text = "\n\n".join([doc.page_content for doc in unique_chunks])
+
+
+        prompt = PromptTemplate.from_template("""
+        Extract the following information from the contract text as a JSON object with keys:
+        - start_date
+        - end_date
+        - renewal_terms
+
+        If not found, write "Not specified".
+
+        Return ONLY the JSON object, no extra explanation.
+
+        Text:
+        {contract_text}
+        """)
+
+        chain = prompt | self.llm
+        raw_output = chain.invoke({"contract_text": combined_text})
+        print(" Raw LLM date extraction output:", raw_output)
+
+        try:
+            date_info = json.loads(raw_output.content)
+        except json.JSONDecodeError:
+            print(" Failed to parse LLM output as JSON, returning empty dict.")
+            date_info = {}
+
+        if date_info:
+            date_info["start_date"] = normalize_date(date_info.get("start_date"))
+            date_info["end_date"] = normalize_date(date_info.get("end_date"))
+
+        save_path = os.path.join(self.base_save_dir, "dates_db")
+        Chroma.from_documents(unique_chunks, self.embeddings, persist_directory=save_path).persist()
+        print(f" Saved date-related content to: {save_path}")
+
+        return date_info
+
+    def get_clauses_retriever(self):
+        return Chroma(
+        persist_directory=os.path.join(self.base_save_dir, "clauses_db"),
+        embedding_function=self.embeddings
+    ).as_retriever(search_kwargs={"k": 10})
+
+
+    def extract_and_save_clauses(self, chunks: List[Dict]):
+        retriever = Chroma(
+            persist_directory=os.path.join(self.base_save_dir, "full_contract_db"),
+            embedding_function=self.embeddings
+        ).as_retriever(search_kwargs={"k": 3})
+
+        clause_queries = [
+        "Termination clause",
+        "Payment terms",
+        "Pay $",
+        "Payment amount",
+        "Confidentiality clause",
+        "Obligations of both parties",
+        "wages",
+        "hourly rate"
+        "Insurance requirements",
+        "Maintenance responsibilities",
+        "Renewal and extension terms",
+        "Dispute resolution",
+        "Force Majeure",
+        "Default and remedies",
+        "Subletting or assignment",
+        "Access to premises",
+        "Governing law",
+        "Notice period",
+        "Early termination rights",
+        "Security deposit terms",
+        "Breach of contract",
+        "Additional clauses"
+        ]
+
+        seen = set()
+        top_docs = []
+        for q in clause_queries:
+            docs = retriever.get_relevant_documents(q)
+            for doc in docs:
+                if doc.page_content not in seen:
+                    seen.add(doc.page_content)
+                    top_docs.append(doc)
+
+        print("Retrieved chunks for clause extraction:")
+        for i, doc in enumerate(top_docs):
+            print(f"Chunk {i+1}:\n{doc.page_content}\n{'-'*40}")
+
+        combined_context = "\n\n".join([doc.page_content for doc in top_docs])
+
+
+        prompt = PromptTemplate.from_template("""
+        You are a contract analyst.
+
+Extract the following legal clause categories from the contract text and return the result as a JSON object. These clauses typically relate to:
+
+Termination, Payment amount, Confidentiality, Obligations, Renewal, Maintenance, Insurance, Dispute Resolution, Force Majeure, Security Deposit, Governing Law, Subletting, Access, Notice Period, Breach, etc.
+
+ For each category, provide a short, clear, actionable sentence. If the clause is not found in the contract, return "Not specified" for that key.
+
+Return ONLY the JSON object, no extra explanations.
+
+Example output:
+{{
+  "Termination": "The landlord may terminate the agreement with 14 days' notice.",
+  "Payment": "Rent of $550 is payable weekly via bank transfer.",
+  "Confidentiality": "Not specified"
+}}             
+
+        Contract text:
+        {context}
+        """)
+
+
+        chain = prompt | self.llm
+        response = chain.invoke({"context": combined_context})
+        
+
+        #  Get the content
+        try:
+            clause_dict = json.loads(response.content)
+        except json.JSONDecodeError:
+            print(" LLM output is not valid JSON:")
+            print(response.content)
+            clause_dict = {}
+
+
+        # Save as document
+        clause_doc = Document(page_content=json.dumps(clause_dict, indent=2))
+        save_path = os.path.join(self.base_save_dir, "clauses_db")
+        Chroma.from_documents([clause_doc], self.embeddings, persist_directory=save_path).persist()
+        print(f" Saved extracted clauses to: {save_path}")
+        return clause_dict
+    
+    def extract_and_save_parties(self, chunks: List[Dict]):
+        retriever = Chroma(
+            persist_directory=os.path.join(self.base_save_dir, "full_contract_db"),
+            embedding_function=self.embeddings
+        ).as_retriever(search_kwargs={"k": 5})
+
+        party_queries = [
+        "parties involved",
+        "landlord",
+        "tenant",
+        "client",
+        "service provider",
+        "party roles",
+        "contract parties",
+        "lessor",
+        "lessee",
+        "agreement parties",
+        "party names",
+        "party obligations",
+        "participants",
+        "signatories",
+        "renter",
+        "owner",
+        "tenant responsibilities",
+        "landlord responsibilities"
+        ]
+
+        seen = set()
+        top_docs = []
+        for q in party_queries:
+            docs = retriever.get_relevant_documents(q)
+            for doc in docs:
+                if doc.page_content not in seen:
+                    seen.add(doc.page_content)
+                    top_docs.append(doc)
+
+        
+        
+        print("Retrieved chunks for party extraction:")
+        for i, doc in enumerate(top_docs, 1):
+            print(f"Chunk {i}:\n{doc.page_content}\n{'-'*40}")
+
+        combined_text = "\n".join([doc.page_content for doc in top_docs])
+
+        
+
+
+
+        prompt = PromptTemplate.from_template("""
+        Identify all parties involved in this contract.  
+        For each party, provide the role (e.g., Landlord, Tenant, Client, Service Provider) and the full name if mentioned in the contract text.  
+        If the name is not mentioned, write "Not mentioned" as the name.  
+        Return the result as bullet points in this format:  
+        
+        - Role: Name - Description or additional details if any.
+                                             
+        Contract Text:
+        {contract_text}
+        """)
+
+
+        chain = prompt | self.llm
+        response = chain.invoke({"contract_text": combined_text})
+        print(" Raw LLM Response:\n", response.content)
+
+        clean_parties_text = response.content.strip()
+
+
+        party_doc = Document(page_content=clean_parties_text)
+        save_path = os.path.join(self.base_save_dir, "parties_db")
+        Chroma.from_documents([party_doc], self.embeddings, persist_directory=save_path).persist()
+        print(f" Saved extracted parties to: {save_path}")
+        return clean_parties_text
+    
+    def _extract_topic_from_headings(self, chunks: List[Dict]) -> str:
+        for chunk in chunks:
+            if chunk["type"] == "text":
+                lines = chunk["content"].splitlines()
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    is_all_caps = line.isupper()
+                    is_short = len(line.split()) <= 6
+                    ends_with_colon = line.endswith(":")
+
+                    is_heading = (is_all_caps and is_short) or ends_with_colon
+                    if is_heading:
+                        cleaned_topic = line.rstrip(":").strip("•>- ").strip()
+                        if len(cleaned_topic) > 2:
+                            return cleaned_topic
+        return "Unknown Topic"
+
+
+
+    def run_full_pipeline(self):
+        chunks = self.load_and_split_mixed()
+        chunks = self.clean_tables_if_pdf(chunks)
+        self.build_full_contract_vectorstore(chunks)
+
+        date_info = self.extract_and_save_dates_with_llm(chunks)
+        clauses_info = self.extract_and_save_clauses(chunks)
+        parties_info = self.extract_and_save_parties(chunks)
+
+        return {
+            "dates": date_info,
+            "clauses": clauses_info,
+            "parties": parties_info,
+            "topic": self.topic 
+        }
+
+
+

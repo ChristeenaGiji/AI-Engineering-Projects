@@ -1,0 +1,36 @@
+from typing import Dict
+
+class RiskScorerAgent:
+    def __init__(self, compliance_report: Dict[str, str]):
+        self.compliance_report = compliance_report
+
+    def calculate_score(self) -> Dict[str, float]:
+        """
+        Calculate a risk score based on compliance report.
+        Present = 0 risk, Missing = 1 risk.
+
+        Returns:
+            dict with:
+              - risk_score (0 to 100, % missing)
+              - total_clauses
+              - missing_count
+              - present_count
+        """
+        total = len(self.compliance_report)
+        missing_count = 0
+        present_count = 0
+
+        for clause, status in self.compliance_report.items():
+            if "Missing" in status:
+                missing_count += 1
+            elif "Present" in status:
+                present_count += 1
+
+        risk_score = (missing_count / total) * 100 if total > 0 else 0.0
+
+        return {
+            "risk_score_percent": risk_score,
+            "total_clauses": total,
+            "missing_clauses": missing_count,
+            "present_clauses": present_count,
+        }
