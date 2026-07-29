@@ -1,0 +1,10 @@
+python-dotenv>=1.0
+psycopg2-binary>=2.9.9
+pandas>=2.2
+altair>=5.2
+streamlit>=1.38
+SQLAlchemy>=2.0
+langchain>=0.2.12
+langgraph>=0.2.22
+langchain-groq>=0.1.4
+groq>=0.8.0
