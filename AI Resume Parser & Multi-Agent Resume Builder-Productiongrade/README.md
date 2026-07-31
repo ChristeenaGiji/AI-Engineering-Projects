@@ -1,14 +1,20 @@
-# AI Resume Parser & Formatter
+# AI Resume Parser & Multi-Agent Resume Builder - Client Project
 
-A production-ready, AI-powered resume parsing and formatting system that outperforms commercial solutions. Built with LangChain, LangGraph, Groq AI, and Supabase.
+A production-style AI application demonstrating how Large Language Models (LLMs), Retrieval-Augmented Generation (RAG), and multi-agent workflows can automate resume parsing, validation, and resume generation.
+
+Note: This repository is a portfolio demonstration. The original production implementation, client-specific business logic, prompts, datasets, deployment configuration, and sensitive code have been removed or simplified to protect confidentiality.
 
 ## 🎯 Key Features
-- **Multi-Agent Architecture**: Specialized agents for parsing, validation, and enhancement
-- **Hybrid Extraction**: Combines rule-based + LLM extraction for 95%+ accuracy
-- **Semantic Validation**: Cross-references data for consistency
-- **Quality Scoring**: Rates parse accuracy and provides improvement suggestions
-- **Template Library**: Professional, ATS-optimized templates with customization
-
+- AI-powered PDF and DOCX resume parsing
+- Multi-agent workflow using LangGraph
+- Structured information extraction
+- Resume validation and quality checks
+- Resume enhancement suggestions
+- ATS-friendly resume generation
+- REST API with FastAPI
+- Modern React frontend
+- PostgreSQL & Vector Database integration
+- Cloud-ready architecture
 ### Core Capabilities
 - ✅ Parse PDF and DOCX resumes with high accuracy
 - ✅ Extract structured data (contact, experience, education, skills)
