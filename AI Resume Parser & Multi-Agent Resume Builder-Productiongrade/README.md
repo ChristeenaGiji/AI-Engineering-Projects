@@ -1,10 +1,8 @@
 # AI Resume Parser & Formatter
 
-A production-ready, AI-powered resume parsing and formatting system that outperforms commercial solutions like AllSorter. Built with LangChain, LangGraph, Groq AI, and Supabase.
+A production-ready, AI-powered resume parsing and formatting system that outperforms commercial solutions. Built with LangChain, LangGraph, Groq AI, and Supabase.
 
 ## 🎯 Key Features
-
-### Superior to AllSorter
 - **Multi-Agent Architecture**: Specialized agents for parsing, validation, and enhancement
 - **Hybrid Extraction**: Combines rule-based + LLM extraction for 95%+ accuracy
 - **Semantic Validation**: Cross-references data for consistency
