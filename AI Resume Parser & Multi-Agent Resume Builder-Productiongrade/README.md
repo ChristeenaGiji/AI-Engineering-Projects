@@ -3,7 +3,64 @@
 A production-style AI application demonstrating how Large Language Models (LLMs), Retrieval-Augmented Generation (RAG), and multi-agent workflows can automate resume parsing, validation, and resume generation.
 
 Note: This repository is a portfolio demonstration. The original production implementation, client-specific business logic, prompts, datasets, deployment configuration, and sensitive code have been removed or simplified to protect confidentiality.
+## 📊 Dashboard & Analytics
 
+### AINet - CandidateHUB Dashboard
+
+![AINet CandidateHUB Dashboard](images/dashboard.png)
+
+*Real-time analytics dashboard showing resume parsing metrics, LLM token usage, and system performance*
+
+The platform includes a comprehensive analytics dashboard providing real-time insights into system performance and resume processing metrics.
+
+#### 📈 Key Metrics Overview
+- **Total Uploads:** 136 resumes processed
+- **Plaques Ingested:** 17,301
+- **Parsing Success Rate:** 80.9%
+- **Failed Parses:** 23
+
+#### 📅 Time Filters
+- All time
+- This year
+- Last 30 days
+- Last 7 days
+- Custom range selection
+
+#### 🎯 Performance Analytics
+
+**Token Usage by Call Type:**
+- Cover Letter Generation
+- Resume Parsing
+- Summary Rewriting
+- Purchase Operations
+- Refund Failed Parsing
+
+**LLM Cost & Usage Efficiency:**
+- **Total Tokens:** 1,479,824 across 65 LLM calls
+- **Total Cost:** $0.4304
+- **Average Cost per Successfully Parsed Resume:** $0.00391
+- **Failure Rate:** 33 of 65 calls failed (50.8%) — elevated; likely rate-limiting
+
+**Platform Health Overview:**
+During the period 'All time':
+- 138 resumes uploaded to the platform
+- 1,100 completed the parsing stage (60.9% success rate)
+- 61 reached final completion status
+- 23 results were unsuccessful
+
+#### 📊 Visual Analytics
+The dashboard provides:
+- **Token Usage Distribution Charts** by call type
+- **Success/Failure Visualizations** (pie charts and bar charts)
+- **Failed Resume Tracking** with filtering capability
+- **Export Options:** Export Page as PDF
+
+#### 🎨 Dashboard Features
+- Real-time data updates
+- Interactive filtering
+- Visual data representation
+- Performance monitoring
+- Cost optimization insights
 ## 🎯 Key Features
 - AI-powered PDF and DOCX resume parsing
 - Multi-agent workflow using LangGraph
@@ -15,6 +72,7 @@ Note: This repository is a portfolio demonstration. The original production impl
 - Modern React frontend
 - PostgreSQL & Vector Database integration
 - Cloud-ready architecture
+- Real-time analytics dashboard with performance monitoring
 ### Core Capabilities
 - ✅ Parse PDF and DOCX resumes with high accuracy
 - ✅ Extract structured data (contact, experience, education, skills)
